@@ -1,4 +1,4 @@
-# MERN Backend Starter
+# Backend Service
 
 A TypeScript + Express backend service with MongoDB connection and Winston logging.
 
