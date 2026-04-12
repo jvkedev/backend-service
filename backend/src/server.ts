@@ -1,8 +1,9 @@
-import app from "./app";
-import connectDatabase from "./config/database";
-import env from "./config/env";
-import logger from "./utils/logger";
+import app from "./app.js";
+import connectDatabase from "./config/database.js";
+import env from "./config/env.js";
+import logger from "./utils/logger.js";
 
+// Initialize and start the application
 async function startServer() {
   await connectDatabase();
 
@@ -11,6 +12,7 @@ async function startServer() {
   });
 }
 
+// Handle startup failure
 startServer().catch((error) => {
   logger.error("Failed to start server", error);
   process.exit(1);

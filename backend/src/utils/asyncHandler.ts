@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { RequestHandler } from "express-serve-static-core";
 
+// Wraps async Express handlers and forwards errors to error middleware
 function asyncHandler(handler: RequestHandler) {
   return async function wrapperHandler(
     req: Request,
