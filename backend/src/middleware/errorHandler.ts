@@ -1,40 +1,32 @@
 import { Request, Response, NextFunction } from "express";
-import logger from "../utils/logger.js";
 
-/**
- * Global error handler middleware for Express
- * Logs server errors (500+) as errors and client errors as warnings,
- * then return a consistent JSON response structure
- */
 function errorHandler(
-  error: any,
+  error: unknown,
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  const statusCode = Number(error.statusCode) || 500;
+  let statusCode = 500;
+  let message = "Internal Server Error";
+  let details;
 
-  if (statusCode >= 500) {
-    logger.error(error.message, {
-      stack: error.stack,
-      details: error.details,
-      path: req.originalUrl,
-      method: req.method,
-    });
-  } else {
-    logger.warn(error.message, {
-      stack: error.stack,
-      details: error.details,
-      path: req.originalUrl,
-      method: req.method,
-      ip: req.ip,
-    });
+  if (error instanceof Error) {
+    message = error.message;
   }
 
-  return res.status(statusCode).json({
+  if (typeof error === "object" && error !== null) {
+    if ("statusCode" in error) {
+      statusCode = (error as any).statusCode;
+    }
+    if ("details" in error) {
+      details = (error as any).details;
+    }
+  }
+
+  res.status(statusCode).json({
     success: false,
-    message: error.message || "Something went wrong",
-    details: error.details || undefined,
+    message,
+    details,
   });
 }
 

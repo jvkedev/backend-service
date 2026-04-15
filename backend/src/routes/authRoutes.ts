@@ -7,4 +7,6 @@ const router = express.Router();
 // Public route for user registration (no authentication required)
 router.post("/register", authController.register);
 
+router.post("/verify-otp", authController.verifyOtp);
+
 export default router;

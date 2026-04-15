@@ -15,6 +15,7 @@ interface IUser extends Document {
     score: number;
   };
   profileComplete: boolean;
+  isVerified: boolean;
 
   comparePassword(password: string): Promise<boolean>;
 }
@@ -62,6 +63,10 @@ const userSchema = new mongoose.Schema<IUser>(
       },
     },
     profileComplete: {
+      type: Boolean,
+      default: false,
+    },
+    isVerified: {
       type: Boolean,
       default: false,
     },
