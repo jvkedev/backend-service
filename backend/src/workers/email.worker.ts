@@ -11,7 +11,7 @@ export const emailWorker = new Worker(
     const baseMeta = {
       jobId: job.id,
       queue: "email-queue",
-      attemptsMode: job.attemptsMade,
+      attemptsMade: job.attemptsMade,
       email,
     };
 
@@ -20,7 +20,7 @@ export const emailWorker = new Worker(
 
       await sendOtpEmail(email, otp);
 
-      logger.info("Emal sent successfully", baseMeta);
+      logger.info("Email sent successfully", baseMeta);
     } catch (error) {
       logger.error("Email job failed", {
         ...baseMeta,

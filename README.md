@@ -177,7 +177,7 @@ Response `200`:
 ## Registration Flow
 
 1. Client sends `POST /register` with user details.
-2. `auth.service.ts` clears any existing pending OTPs for that email, generates a new hashed OTP, saves an `Otp` document, and enqueues a `send-otp` job.
+2. `auth.service.ts` upserts the pending OTP record for that email (creates or replaces an existing unverified one), hashes the new OTP, resets the attempt counter, and enqueues a `send-otp` job via BullMQ.
 3. BullMQ's `emailWorker` picks up the job and sends the OTP email via `email.service.ts`.
 4. Client submits the OTP to `POST /verify-otp`.
 5. `auth.service.ts` validates the OTP (expiry + attempt limit + hash), creates the `User` document with `isVerified: true`, cleans up the OTP record, and returns a JWT.
@@ -185,10 +185,10 @@ Response `200`:
 ## Runtime Flow
 
 1. `src/server.ts` initializes startup.
-2. `src/config/database.ts` connects MongoDB.
+2. `src/config/database.ts` connects MongoDB and calls `Otp.syncIndexes()` to ensure indexes are in sync.
 3. `src/config/redis.ts` initializes the Redis connection for BullMQ.
 4. `src/app.ts` registers middleware (requestId, requestLogger, JSON parser, routes, global error handler).
-5. `src/workers/email.worker.ts` starts the BullMQ worker (concurrency: 8).
+5. `src/workers/email.worker.ts` starts the BullMQ worker (concurrency: 8) with structured per-job logging (jobId, queue, attemptsMade, email).
 
 ## Middleware
 
@@ -198,11 +198,28 @@ Response `200`:
 | `requestLogger` | Logs method, path, status, duration, IP, and sanitized body on response finish |
 | `errorHandler` | Normalizes all errors into a consistent JSON error response |
 
+## Load Testing
+
+A k6 load test script is located at `tests/register.test.ts`.
+
+```bash
+k6 run tests/register.test.ts
+```
+
+Default configuration: 100 virtual users, 30-second duration.
+
+Thresholds:
+- `http_req_failed < 1%`
+- `http_req_duration p(95) < 800ms`
+
+The script hits `POST /api/auth/register` with unique email addresses per VU/iteration to avoid collisions.
+
 ## Notes
 
 - Project is configured as ESM (`"type": "module"`) with Node16 module resolution.
 - Passwords and OTP fields are redacted in request logs.
 - IP addresses are normalized (IPv4-mapped IPv6 `::ffff:` prefix is stripped).
 - Zod validation errors are formatted as `{ field, message }` objects via `validates.utils.ts`.
-- The `Otp` collection uses a MongoDB TTL index on `expiresAt` for automatic cleanup.
+- The `Otp` collection has two indexes: a TTL index on `expiresAt` for automatic document expiry, and a compound index on `userData.email + verified` to speed up OTP lookups during registration and verification.
+- `Otp.syncIndexes()` is called at startup to keep MongoDB indexes in sync with the schema definition.
 - Never commit real credentials in `.env`.

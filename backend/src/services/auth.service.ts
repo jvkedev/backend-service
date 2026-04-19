@@ -29,39 +29,37 @@ export async function registerUserWithOtp(
 ) {
   const { fullName, email, password } = userData;
 
-  await Otp.deleteMany({
-    "userData.email": email,
-    verified: false,
-  });
-
+  const totalStart = Date.now();
   const otp = generateOtp();
 
-  await Otp.create({
-    userData: { fullName, email, password },
-    otp: hashOtp(otp),
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-    attempts: 0,
-    verified: false,
-  });
-
-  await emailQueue.add(
-    "send-otp",
-    { email, otp },
+  const upsertStart = Date.now();
+  await Otp.findOneAndUpdate(
+    { "userData.email": email, verified: false },
     {
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 5000,
+      $set: {
+        userData: { fullName, email, password },
+        otp: hashOtp(otp),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        attempts: 0,
+        verified: false,
       },
-      removeOnComplete: true,
-      removeOnFail: false,
+    },
+    {
+      upsert: true,
+      new: true,
     },
   );
+  console.log("upsert only:", Date.now() - upsertStart);
 
-  logger.info("OTP generated and queued", {
-    requestId,
-    email,
-  });
+  const queueStart = Date.now();
+  await emailQueue.add("send-otp", { email, otp });
+  console.log("queue add only:", Date.now() - queueStart);
+
+  console.log("total service time:", Date.now() - totalStart);
+  // logger.info("OTP generated and queued", {
+  //   requestId,
+  //   email,
+  // });
 }
 
 export async function verifyUserOtp(
