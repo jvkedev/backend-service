@@ -1,32 +1,60 @@
 import winston from "winston";
-import config from "../config/env.js";
+import env from "../config/env.js";
 
-const transports = [];
-if (process.env.NODE_ENV !== "development") {
-  transports.push(new winston.transports.Console());
-} else {
+const { combine, timestamp, errors, splat, json, colorize, printf } =
+  winston.format;
+
+const isDevelopment = env.nodeEnv === "development";
+
+const devFormat = combine(
+  colorize({ all: true }),
+  timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  errors({ stack: true }),
+  splat(),
+  printf(({ level, message, timestamp, stack, ...meta }) => {
+    const extra =
+      Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta, null, 2)}` : "";
+
+    return stack
+      ? `[${timestamp}] ${level}: ${stack}${extra}`
+      : `[${timestamp}] ${level}: ${message}${extra}`;
+  }),
+);
+
+const prodFormat = combine(
+  timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  errors({ stack: true }),
+  splat(),
+  json(),
+);
+
+const transports: winston.transport[] = [
+  new winston.transports.Console({
+    format: isDevelopment ? devFormat : prodFormat,
+  }),
+];
+
+if (!isDevelopment) {
   transports.push(
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.cli(),
-        winston.format.splat(),
-      ),
+    new winston.transports.File({
+      filename: "logs/error.log",
+      level: "error",
+      format: prodFormat,
+    }),
+    new winston.transports.File({
+      filename: "logs/combined.log",
+      format: prodFormat,
     }),
   );
 }
 
-const LoggerInstance = winston.createLogger({
-  level: config.logs.level,
-  levels: winston.config.npm.levels,
-  format: winston.format.combine(
-    winston.format.timestamp({
-      format: "YYYY-MM-DD HH:mm:ss",
-    }),
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.json(),
-  ),
+const logger = winston.createLogger({
+  level: env.logs.level || "info",
+  defaultMeta: {
+    service: "backend-service",
+  },
   transports,
+  exitOnError: false,
 });
 
-export default LoggerInstance;
+export default logger;

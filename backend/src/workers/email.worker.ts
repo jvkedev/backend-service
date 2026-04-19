@@ -1,26 +1,37 @@
 import { Worker } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { sendOtpEmail } from "../services/email.service.js";
-
-console.log("🔥 Worker started");
+import logger from "../utils/logger.js";
 
 export const emailWorker = new Worker(
   "email-queue",
   async (job) => {
+    const { email, otp } = job.data;
+
+    const baseMeta = {
+      jobId: job.id,
+      queue: "email-queue",
+      attemptsMode: job.attemptsMade,
+      email,
+    };
+
     try {
-      console.log("➡️ Entering processor");
-      console.log("📩 Job received:", job.data);
+      logger.info("Email job started", baseMeta);
 
-      console.log("📤 Calling email function");
+      await sendOtpEmail(email, otp);
 
-      const result = await sendOtpEmail(job.data.email, job.data.otp);
+      logger.info("Emal sent successfully", baseMeta);
+    } catch (error) {
+      logger.error("Email job failed", {
+        ...baseMeta,
+        err: error,
+      });
 
-      console.log("📬 Email sent successfully:", result);
-    } catch (err) {
-      console.error("❌ Worker crash:", err);
+      throw error;
     }
   },
   {
     connection: redisConnection,
+    concurrency: 8,
   },
 );
