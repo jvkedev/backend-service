@@ -1,26 +1,34 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "../utils/logger.js";
 
+type AppErrorShape = {
+  statusCode: number;
+  details?: unknown;
+};
+
 function errorHandler(
   error: unknown,
   req: Request,
   res: Response,
-  next: NextFunction,
+  _next: NextFunction,
 ) {
   let statusCode = 500;
   let message = "Internal Server Error";
-  let details;
+  let details: unknown;
 
   if (error instanceof Error) {
     message = error.message;
   }
 
   if (typeof error === "object" && error !== null) {
-    if ("statusCode" in error) {
-      statusCode = (error as any).statusCode;
+    const customError = error as AppErrorShape;
+
+    if (typeof customError.statusCode !== "number") {
+      statusCode = customError.statusCode;
     }
-    if ("details" in error) {
-      details = (error as any).details;
+
+    if ("details" in customError) {
+      details = customError.details;
     }
   }
 
@@ -45,7 +53,7 @@ function errorHandler(
       err: error,
     });
   } else {
-    logger.warn("Request completed", logPayload);
+    logger.warn("Client error occured", logPayload);
   }
 
   res.status(statusCode).json({

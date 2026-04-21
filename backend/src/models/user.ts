@@ -1,12 +1,12 @@
 import bcrypt from "bcryptjs";
-import mongoose, { Document, Model } from "mongoose";
+import mongoose, { Document } from "mongoose";
 
 interface IUser extends Document {
   fullName: string;
   email: string;
   password: string;
   role: "student" | "counselor";
-  targetCountried: string[];
+  targetCountries: string[];
   interestedFields: string[];
   preferredIntake?: string;
   maxBudgetUsd?: number;
@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema<IUser>(
       enum: ["student", "counselor"],
       default: "student",
     },
-    targetCountried: [String],
+    targetCountries: [String],
     interestedFields: [String],
     preferredIntake: String,
     maxBudgetUsd: Number,
@@ -84,4 +84,6 @@ userSchema.methods.comparePassword = function (this: IUser, password: string) {
   return bcrypt.compare(password, this.password);
 };
 
-export default mongoose.model("User", userSchema);
+const User = mongoose.model<IUser>("User", userSchema);
+
+export default User;

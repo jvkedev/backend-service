@@ -6,5 +6,8 @@ export const generateOtp = () => {
 };
 
 export const hashOtp = (otp: string) => {
-  return crypto.createHash("sha256").update(otp + env.otpSecret).digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(otp + env.otpSecret)
+    .digest("hex");
 };

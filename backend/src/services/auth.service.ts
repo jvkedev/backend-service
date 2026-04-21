@@ -56,10 +56,10 @@ export async function registerUserWithOtp(
   console.log("queue add only:", Date.now() - queueStart);
 
   console.log("total service time:", Date.now() - totalStart);
-  // logger.info("OTP generated and queued", {
-  //   requestId,
-  //   email,
-  // });
+  logger.info("OTP generated and queued", {
+    requestId,
+    email,
+  });
 }
 
 export async function verifyUserOtp(
