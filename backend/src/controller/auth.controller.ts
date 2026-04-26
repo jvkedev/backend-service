@@ -1,5 +1,6 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import HttpError from "../utils/httpError.js";
+import env from "../config/env.js";
 import {
   registerUserSchema,
   verifyOtpSchema,
@@ -46,13 +47,19 @@ const verifyOtp = asyncHandler(async (req, res) => {
 
   const verifiedUser = await verifyUserOtp(result.data, req.requestId);
 
+  res.cookie("accessToken", verifiedUser.token, {
+    httpOnly: true,
+    secure: env.nodeEnv === "production",
+    sameSite: "lax",
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+
   res.status(200).json({
     message: "Account verified successfully",
     user: {
       userId: verifiedUser.userId,
       email: verifiedUser.email,
     },
-    token: verifiedUser.token,
   });
 });
 
@@ -69,6 +76,13 @@ const login = asyncHandler(async (req, res) => {
 
   const loggedInUser = await loginUser(result.data, req.requestId);
 
+  res.cookie("accessToken", loggedInUser.token, {
+    httpOnly: true,
+    secure: env.nodeEnv === "production",
+    sameSite: "lax",
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+
   res.status(200).json({
     message: "Login successful",
     user: {
@@ -76,7 +90,6 @@ const login = asyncHandler(async (req, res) => {
       fullName: loggedInUser.fullName,
       email: loggedInUser.email,
     },
-    token: loggedInUser.token,
   });
 });
 

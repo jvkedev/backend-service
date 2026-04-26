@@ -1,334 +1,355 @@
-  import { performance } from "node:perf_hooks";
-  import { redis } from "../config/redis.js";
-  import bcrypt from "bcryptjs";
-  import User from "../models/user.js";
-  import Otp from "../models/otp.js";
-  import HttpError from "../utils/httpError.js";
-  import logger from "../utils/logger.js";
-  import generateToken from "../utils/generateToken.js";
-  import { emailQueue } from "../queues/email.queue.js";
-  import { generateOtp, hashOtp } from "./otp.service.js";
-  import config from "../config/env.js";
+import { performance } from "node:perf_hooks";
+import { redis } from "../config/redis.js";
+import bcrypt from "bcryptjs";
+import User from "../models/user.js";
+import Otp from "../models/otp.js";
+import HttpError from "../utils/httpError.js";
+import logger from "../utils/logger.js";
+import generateToken from "../utils/generateToken.js";
+import { emailQueue } from "../queues/email.queue.js";
+import { generateOtp, hashOtp } from "./otp.service.js";
+import config from "../config/env.js";
 
-  type RegisterUserInput = {
-    fullName: string;
-    email: string;
-    password: string;
-  };
+type RegisterUserInput = {
+  fullName: string;
+  email: string;
+  password: string;
+};
 
-  type VerifyOtpInput = {
-    email: string;
-    otp: string;
-  };
+type VerifyOtpInput = {
+  email: string;
+  otp: string;
+};
 
-  type VerifyOtpResult = {
-    userId: string;
-    email: string;
-    token: string;
-  };
+type VerifyOtpResult = {
+  userId: string;
+  email: string;
+  token: string;
+};
 
-  type LoginUserInput = {
-    email: string;
-    password: string;
-  };
+type LoginUserInput = {
+  email: string;
+  password: string;
+};
 
-  type LoginUserResult = {
-    userId: string;
-    fullName: string;
-    email: string;
-    token: string;
-  };
+type LoginUserResult = {
+  userId: string;
+  fullName: string;
+  email: string;
+  token: string;
+};
 
-  type LoginUserCache = {
-    _id: string;
-    fullName: string;
-    email: string;
-    password: string;
-  };
+type LoginUserCache = {
+  _id: string;
+  fullName: string;
+  email: string;
+  password: string;
+};
 
-  export async function registerUserWithOtp(
-    data: RegisterUserInput,
-    requestId?: string,
-  ): Promise<{ message: string }> {
-    const totalStart = performance.now();
-    const timings: Record<string, number> = {};
+export async function registerUserWithOtp(
+  data: RegisterUserInput,
+  requestId?: string,
+): Promise<{ message: string }> {
+  const totalStart = performance.now();
+  const timings: Record<string, number> = {};
 
-    const { fullName, email, password } = data;
+  const { fullName, email, password } = data;
 
-    let start = performance.now();
-    let otp = generateOtp();
-    timings.generateOtp = performance.now() - start;
+  let start = performance.now();
+  const existingUser = await User.findOne({ email }).select("_id").lean();
+  timings.checkExistingUser = performance.now() - start;
 
-    if (config.nodeEnv === "test") {
-      otp = "123456";
-    }
-
-    start = performance.now();
-    const hashedPassword = await bcrypt.hash(password, 8);
-    timings.hashPassword = performance.now() - start;
-
-    start = performance.now();
-    await Otp.findOneAndUpdate(
-      { "userData.email": email },
-      {
-        $set: {
-          userData: { fullName, email, password: hashedPassword },
-          otp: hashOtp(otp),
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-          attempts: 0,
-          verified: false,
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      },
-    );
-    timings.upsertOtpRecord = performance.now() - start;
-
-    start = performance.now();
-    await emailQueue.add("send-otp", { email, otp });
-    timings.enququeOtpEmail = performance.now() - start;
-
+  if (existingUser) {
     timings.total = performance.now() - totalStart;
 
-    logger.info("OTP generated and queued", {
+    logger.warn("registerUserWithOtp failed", {
       requestId,
       email,
+      reason: "Email already registered",
       timings,
     });
 
-    return {
-      message: "Signup request recieved. Please verify OTP.",
-    };
+    throw new HttpError(409, "Email already registered");
   }
 
-  export async function verifyUserOtp(
-    data: VerifyOtpInput,
-    requestId?: string,
-  ): Promise<VerifyOtpResult> {
-    const totalStart = performance.now();
-    const timings: Record<string, number> = {};
+  start = performance.now();
+  let otp = generateOtp();
+  timings.generateOtp = performance.now() - start;
 
-    const { email, otp } = data;
+  if (config.nodeEnv === "test") {
+    otp = "123456";
+  }
 
-    let start = performance.now();
-    const otpRecord = await Otp.findOne({
-      "userData.email": email,
-      verified: false,
-    });
-    timings.findOtpRecord = performance.now() - start;
+  start = performance.now();
+  const hashedPassword = await bcrypt.hash(password, 8);
+  timings.hashPassword = performance.now() - start;
 
-    if (!otpRecord) {
-      timings.total = performance.now() - totalStart;
+  start = performance.now();
+  await Otp.findOneAndUpdate(
+    { "userData.email": email },
+    {
+      $set: {
+        userData: {
+          fullName,
+          email,
+          password: hashedPassword,
+        },
+        otp: hashOtp(otp),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        attempts: 0,
+        verified: false,
+      },
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    },
+  );
+  timings.upsertOtpRecord = performance.now() - start;
 
-      logger.warn("verifyUserOtp failed", {
-        requestId,
-        email,
-        reason: "OTP not found or already used",
-        timings,
-      });
+  start = performance.now();
+  await emailQueue.add("send-otp", { email, otp });
+  timings.enqueueOtpEmail = performance.now() - start;
 
-      throw new HttpError(400, "OTP not found or already used");
-    }
+  timings.total = performance.now() - totalStart;
 
-    if (!otpRecord.userData) {
-      timings.total = performance.now() - totalStart;
+  logger.info("OTP generated and queued", {
+    requestId,
+    email,
+    timings,
+  });
 
-      logger.error("verifyUserOtp failed", {
-        requestId,
-        email,
-        reason: "OTP record is missing user data",
-        timings,
-      });
+  return {
+    message: "Signup request received. Please verify OTP.",
+  };
+}
 
-      throw new HttpError(500, "OTP record is missing user data");
-    }
+export async function verifyUserOtp(
+  data: VerifyOtpInput,
+  requestId?: string,
+): Promise<VerifyOtpResult> {
+  const totalStart = performance.now();
+  const timings: Record<string, number> = {};
 
-    if (otpRecord.expiresAt < new Date()) {
-      start = performance.now();
-      await Otp.deleteOne({ _id: otpRecord._id });
-      timings.deleteExpiredOtp = performance.now() - start;
-      timings.total = performance.now() - totalStart;
+  const { email, otp } = data;
 
-      logger.warn("verifyUserOtp failed", {
-        requestId,
-        email,
-        reason: "OTP expired",
-        timings,
-      });
+  let start = performance.now();
+  const otpRecord = await Otp.findOne({
+    "userData.email": email,
+    verified: false,
+  });
+  timings.findOtpRecord = performance.now() - start;
 
-      throw new HttpError(410, "OTP expired");
-    }
-
-    if (otpRecord.attempts >= 5) {
-      start = performance.now();
-      await Otp.deleteOne({ _id: otpRecord._id });
-      timings.deleteLockedOtp = performance.now() - start;
-      timings.total = performance.now() - totalStart;
-
-      logger.warn("verifyUserOtp failed", {
-        requestId,
-        email,
-        reason: "Too many attempts",
-        attempts: otpRecord.attempts,
-        timings,
-      });
-
-      throw new HttpError(429, "Too many attempts");
-    }
-
-    start = performance.now();
-    const hashedInput = hashOtp(otp);
-    timings.hashOtp = performance.now() - start;
-
-    start = performance.now();
-    const isOtpValid = hashedInput === otpRecord.otp;
-    timings.compareOtp = performance.now() - start;
-
-    if (!isOtpValid) {
-      start = performance.now();
-      otpRecord.attempts += 1;
-      await otpRecord.save();
-      timings.saveInvalidAttempt = performance.now() - start;
-      timings.total = performance.now() - totalStart;
-
-      logger.warn("verifyUserOtp failed", {
-        requestId,
-        email,
-        reason: "Invalid OTP",
-        attempts: otpRecord.attempts,
-        timings,
-      });
-
-      throw new HttpError(401, "Invalid OTP");
-    }
-
-    start = performance.now();
-    const user = await User.create({
-      fullName: otpRecord.userData.fullName,
-      email: otpRecord.userData.email,
-      password: otpRecord.userData.password,
-      isVerified: true,
-    });
-    timings.createUser = performance.now() - start;
-
-    start = performance.now();
-    await Otp.updateOne({ _id: otpRecord._id }, { $set: { verified: true } });
-    timings.markOtpUsed = performance.now() - start;
-
-    start = performance.now();
-    const token = generateToken(user._id.toString());
-    timings.generateToken = performance.now() - start;
-
+  if (!otpRecord) {
     timings.total = performance.now() - totalStart;
 
-    logger.info("User verified successfully", {
+    logger.warn("verifyUserOtp failed", {
       requestId,
-      userId: user._id.toString(),
-      email: user.email,
+      email,
+      reason: "OTP not found or already used",
       timings,
     });
 
-    return {
-      userId: user._id.toString(),
-      email: user.email,
-      token,
-    };
+    throw new HttpError(400, "OTP not found or already used");
   }
 
-  export async function loginUser(
-    data: LoginUserInput,
-    requestId?: string,
-  ): Promise<LoginUserResult> {
-    const totalStart = performance.now();
-    const timings: Record<string, number> = {};
+  if (!otpRecord.userData) {
+    timings.total = performance.now() - totalStart;
 
-    const { email, password } = data;
-    const cacheKey = `user:login:${email}`;
+    logger.error("verifyUserOtp failed", {
+      requestId,
+      email,
+      reason: "OTP record is missing user data",
+      timings,
+    });
 
-    let start = performance.now();
+    throw new HttpError(500, "OTP record is missing user data");
+  }
 
-    const cachedUser = await redis.get(cacheKey);
-    timings.redisGet = Number((performance.now() - start).toFixed(2));
+  if (otpRecord.expiresAt < new Date()) {
+    start = performance.now();
+    await Otp.deleteOne({ _id: otpRecord._id });
+    timings.deleteExpiredOtp = performance.now() - start;
+    timings.total = performance.now() - totalStart;
 
-    let user: LoginUserCache;
+    logger.warn("verifyUserOtp failed", {
+      requestId,
+      email,
+      reason: "OTP expired",
+      timings,
+    });
 
-    if (cachedUser) {
-      user = JSON.parse(cachedUser) as LoginUserCache;
-    } else {
-      start = performance.now();
+    throw new HttpError(410, "OTP expired");
+  }
 
-      const dbUser = await User.findOne({ email })
-        .select("_id fullName email password")
-        .lean();
+  if (otpRecord.attempts >= 5) {
+    start = performance.now();
+    await Otp.deleteOne({ _id: otpRecord._id });
+    timings.deleteLockedOtp = performance.now() - start;
+    timings.total = performance.now() - totalStart;
 
-      timings.findUser = Number((performance.now() - start).toFixed(2));
+    logger.warn("verifyUserOtp failed", {
+      requestId,
+      email,
+      reason: "Too many attempts",
+      attempts: otpRecord.attempts,
+      timings,
+    });
 
-      if (!dbUser) {
-        timings.total = performance.now() - totalStart;
+    throw new HttpError(429, "Too many attempts");
+  }
 
-        logger.warn("loginUser failed", {
-          requestId,
-          email,
-          reason: "User not found",
-          timings,
-        });
+  start = performance.now();
+  const hashedInput = hashOtp(otp);
+  timings.hashOtp = performance.now() - start;
 
-        throw new HttpError(401, "Invalid email or password");
-      }
+  start = performance.now();
+  const isOtpValid = hashedInput === otpRecord.otp;
+  timings.compareOtp = performance.now() - start;
 
-      user = {
-        _id: dbUser._id.toString(),
-        fullName: dbUser.fullName,
-        email: dbUser.email,
-        password: dbUser.password,
-      };
+  if (!isOtpValid) {
+    start = performance.now();
+    otpRecord.attempts += 1;
+    await otpRecord.save();
+    timings.saveInvalidAttempt = performance.now() - start;
+    timings.total = performance.now() - totalStart;
 
-      start = performance.now();
+    logger.warn("verifyUserOtp failed", {
+      requestId,
+      email,
+      reason: "Invalid OTP",
+      attempts: otpRecord.attempts,
+      timings,
+    });
 
-      await redis.set(cacheKey, JSON.stringify(user), "EX", 300);
-      timings.redisSet = Number((performance.now() - start).toFixed(2));
-    }
+    throw new HttpError(401, "Invalid OTP");
+  }
 
+  start = performance.now();
+  const user = await User.create({
+    fullName: otpRecord.userData.fullName,
+    email: otpRecord.userData.email,
+    password: otpRecord.userData.password,
+    isVerified: true,
+  });
+  timings.createUser = performance.now() - start;
+
+  start = performance.now();
+  await Otp.updateOne({ _id: otpRecord._id }, { $set: { verified: true } });
+  timings.markOtpUsed = performance.now() - start;
+
+  start = performance.now();
+  const token = generateToken(user._id.toString());
+  timings.generateToken = performance.now() - start;
+
+  timings.total = performance.now() - totalStart;
+
+  logger.info("User verified successfully", {
+    requestId,
+    userId: user._id.toString(),
+    email: user.email,
+    timings,
+  });
+
+  return {
+    userId: user._id.toString(),
+    email: user.email,
+    token,
+  };
+}
+
+export async function loginUser(
+  data: LoginUserInput,
+  requestId?: string,
+): Promise<LoginUserResult> {
+  const totalStart = performance.now();
+  const timings: Record<string, number> = {};
+
+  const { email, password } = data;
+  const cacheKey = `user:login:${email}`;
+
+  let start = performance.now();
+
+  const cachedUser = await redis.get(cacheKey);
+  timings.redisGet = Number((performance.now() - start).toFixed(2));
+
+  let user: LoginUserCache;
+
+  if (cachedUser) {
+    user = JSON.parse(cachedUser) as LoginUserCache;
+  } else {
     start = performance.now();
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    timings.comparePassword = Number((performance.now() - start).toFixed(2));
+    const dbUser = await User.findOne({ email })
+      .select("_id fullName email password")
+      .lean();
 
-    if (!isPasswordValid) {
-      timings.total = Number((performance.now() - totalStart).toFixed(2));
+    timings.findUser = Number((performance.now() - start).toFixed(2));
+
+    if (!dbUser) {
+      timings.total = performance.now() - totalStart;
 
       logger.warn("loginUser failed", {
         requestId,
         email,
-        reason: "Invalid password",
+        reason: "User not found",
         timings,
       });
 
       throw new HttpError(401, "Invalid email or password");
     }
 
+    user = {
+      _id: dbUser._id.toString(),
+      fullName: dbUser.fullName,
+      email: dbUser.email,
+      password: dbUser.password,
+    };
+
     start = performance.now();
 
-    const token = generateToken(user._id);
+    await redis.set(cacheKey, JSON.stringify(user), "EX", 300);
+    timings.redisSet = Number((performance.now() - start).toFixed(2));
+  }
 
-    timings.generateToken = Number((performance.now() - start).toFixed(2));
+  start = performance.now();
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  timings.comparePassword = Number((performance.now() - start).toFixed(2));
+
+  if (!isPasswordValid) {
     timings.total = Number((performance.now() - totalStart).toFixed(2));
 
-    // if (timings.total > 700) {
-      logger.info("User logged in successfully", {
-        requestId,
-        userId: user?._id,
-        email: user?.email,
-        timings,
-      });
-    // }
-    return {
-      userId: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      token,
-    };
+    logger.warn("loginUser failed", {
+      requestId,
+      email,
+      reason: "Invalid password",
+      timings,
+    });
+
+    throw new HttpError(401, "Invalid email or password");
   }
+
+  start = performance.now();
+
+  const token = generateToken(user._id);
+
+  timings.generateToken = Number((performance.now() - start).toFixed(2));
+  timings.total = Number((performance.now() - totalStart).toFixed(2));
+
+  // if (timings.total > 700) {
+  logger.info("User logged in successfully", {
+    requestId,
+    userId: user?._id,
+    email: user?.email,
+    timings,
+  });
+  // }
+  return {
+    userId: user._id,
+    fullName: user.fullName,
+    email: user.email,
+    token,
+  };
+}

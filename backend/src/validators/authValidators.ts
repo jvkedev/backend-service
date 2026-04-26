@@ -83,22 +83,5 @@ export const loginUserSchema = z.object({
     .string({
       error: "Password is required",
     })
-    .min(8, "Password must be at least 8 characters")
-    .max(100, "Password is too long")
-    .refine((v) => !v.includes(" "), {
-      message: "Password cannot contain spaces",
-    })
-    .refine((v) => /[A-Z]/.test(v), {
-      message: "Must include at least one uppercase letter",
-    })
-    .refine((v) => /[a-z]/.test(v), {
-      message: "Must include at least one lowercase letter",
-    })
-    .refine((v) => /[0-9]/.test(v), {
-      message: "Must include at least one number",
-    })
-    .refine((v) => /[@$!%?&]/.test(v), {
-      message: "Must include at least one special character",
-    })
-    .transform((v) => v.trim()),
+    .min(1, "Password is required"),
 });

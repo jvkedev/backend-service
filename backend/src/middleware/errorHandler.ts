@@ -23,7 +23,7 @@ function errorHandler(
   if (typeof error === "object" && error !== null) {
     const customError = error as AppErrorShape;
 
-    if (typeof customError.statusCode !== "number") {
+    if (typeof customError.statusCode == "number") {
       statusCode = customError.statusCode;
     }
 
