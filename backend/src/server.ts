@@ -8,6 +8,7 @@ async function startServer() {
   await connectDatabase();
 
   app.listen(env.port, () => {
+    console.log("NODE_ENV:", env.nodeEnv);
     logger.info(`Server is running on port ${env.port}`);
   });
 }

@@ -3,10 +3,12 @@ import HttpError from "../utils/httpError.js";
 import {
   registerUserSchema,
   verifyOtpSchema,
+  loginUserSchema,
 } from "../validators/authValidators.js";
 import {
   registerUserWithOtp,
   verifyUserOtp,
+  loginUser,
 } from "../services/auth.service.js";
 import { formatZodErrors } from "../utils/validates.utils.js";
 
@@ -54,4 +56,28 @@ const verifyOtp = asyncHandler(async (req, res) => {
   });
 });
 
-export default { register, verifyOtp };
+const login = asyncHandler(async (req, res) => {
+  const result = loginUserSchema.safeParse(req.body);
+
+  if (!result.success) {
+    throw new HttpError(
+      400,
+      "Validation failed",
+      formatZodErrors(result.error.issues),
+    );
+  }
+
+  const loggedInUser = await loginUser(result.data, req.requestId);
+
+  res.status(200).json({
+    message: "Login successful",
+    user: {
+      userId: loggedInUser.userId,
+      fullName: loggedInUser.fullName,
+      email: loggedInUser.email,
+    },
+    token: loggedInUser.token,
+  });
+});
+
+export default { register, verifyOtp, login };

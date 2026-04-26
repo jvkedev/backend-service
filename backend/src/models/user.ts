@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema<IUser>(
     englishTest: {
       exam: {
         type: String,
-        default: "ILETS",
+        default: "IELTS",
       },
       score: {
         type: Number,
@@ -77,10 +77,19 @@ const userSchema = new mongoose.Schema<IUser>(
 userSchema.pre("save", async function (this: IUser) {
   if (!this.isModified("password")) return;
 
-  this.password = await bcrypt.hash(this.password, 10);
+  const alreadyHashed =
+    this.password.startsWith("$2a$") ||
+    this.password.startsWith("$2b$") ||
+    this.password.startsWith("$2y$");
+
+  if (alreadyHashed) return;
+
+  this.password = await bcrypt.hash(this.password, 8);
 });
 
-userSchema.methods.comparePassword = function (this: IUser, password: string) {
+userSchema.index({ email: 1 }, { unique: true });
+
+userSchema.methods.comparePassword = async function (password: string) {
   return bcrypt.compare(password, this.password);
 };
 

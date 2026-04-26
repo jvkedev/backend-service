@@ -5,6 +5,10 @@
   "main": "server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
     "worker": "tsx src/workers/email.worker.ts",
     "build": "tsc",
     "start": "node dist/server.js",

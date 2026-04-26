@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { redisConnection } from "../config/redis.js";
+import { bullConnection } from "../config/redis.js";
 import { sendOtpEmail } from "../services/email.service.js";
 import logger from "../utils/logger.js";
 
@@ -31,7 +31,7 @@ export const emailWorker = new Worker(
     }
   },
   {
-    connection: redisConnection,
+    connection: bullConnection,
     concurrency: 8,
   },
 );
